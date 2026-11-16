@@ -1,0 +1,82 @@
+name: Terraform Apply - AWS OIDC
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Select APPLY_DEV to provision the dev VPC"
+        required: true
+        type: choice
+        options:
+          - "NO"
+          - "APPLY_DEV"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-dev-network
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+  AWS_REGION: "us-west-2"
+
+  TF_VAR_aws_region: "us-west-2"
+  TF_VAR_environment: "dev"
+  TF_VAR_vpc_name: "vpc-terraform-poc-dev-us-west-2"
+  TF_VAR_vpc_cidr: "10.10.0.0/16"
+
+jobs:
+  apply:
+    name: Apply dev network
+    if: ${{ inputs.confirmation == 'APPLY_DEV' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform/dev-network
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::513594860053:role/github-actions-terraform-aws-poc
+          role-session-name: gha-terraform-apply-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "513594860053"
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
+
+      - name: Create reviewed execution plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Display execution plan
+        run: terraform show -no-color tfplan
+
+      - name: Apply exact saved plan
+        run: terraform apply -input=false tfplan
+
+      - name: Display Terraform outputs
+        run: terraform output -no-color

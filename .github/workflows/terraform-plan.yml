@@ -17,7 +17,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: terraform-dev-network-${{ github.ref }}
+  group: terraform-dev-network
   cancel-in-progress: false
 
 env:
