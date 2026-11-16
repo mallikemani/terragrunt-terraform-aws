@@ -1,0 +1,83 @@
+name: Terraform Plan - AWS OIDC
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - feature/aws-terraform-foundation
+
+    paths:
+      - "terraform/dev-network/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-dev-network-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+  AWS_REGION: "us-west-2"
+
+  TF_VAR_aws_region: "us-west-2"
+  TF_VAR_environment: "dev"
+  TF_VAR_vpc_name: "vpc-terraform-poc-dev-us-west-2"
+  TF_VAR_vpc_cidr: "10.10.0.0/16"
+
+jobs:
+  plan:
+    name: Plan dev network
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform/dev-network
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::513594860053:role/github-actions-terraform-aws-poc
+          role-session-name: gha-terraform-plan-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "513594860053"
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
+
+      - name: Create Terraform plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Render human-readable plan
+        run: terraform show -no-color tfplan > tfplan.txt
+
+      - name: Upload human-readable plan
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: dev-network-terraform-plan-${{ github.run_id }}
+          path: terraform/dev-network/tfplan.txt
+          retention-days: 3
